@@ -1,0 +1,26 @@
+# Render Blueprint: creates the API (Node) and its PostgreSQL database together.
+# Dashboard -> New -> Blueprint -> pick this repo.
+services:
+  - type: web
+    name: autocare-api
+    runtime: node
+    rootDir: backend
+    plan: free
+    buildCommand: npm install
+    startCommand: node server.js
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: 20
+      - key: DATABASE_URL
+        fromDatabase:
+          name: autocare-db
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+
+databases:
+  - name: autocare-db
+    databaseName: autocare_db
+    user: autocare
+    plan: free

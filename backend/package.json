@@ -1,0 +1,17 @@
+{
+  "name": "autocare-backend",
+  "version": "2.0.0",
+  "description": "Node.js & Express PostgreSQL backend for AutoCare",
+  "main": "server.js",
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "start": "node server.js",
+    "init-db": "node init-db.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "pg": "^8.13.1"
+  }
+}

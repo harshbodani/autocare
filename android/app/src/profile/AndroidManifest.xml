@@ -1,0 +1,6 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- Allow plain-http servers (e.g. a laptop on your LAN) in debug/profile builds only -->
+    <application android:usesCleartextTraffic="true" tools:replace="android:usesCleartextTraffic"/>
+</manifest>
