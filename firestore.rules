@@ -1,0 +1,14 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Workshop data: any signed-in user of the app.
+    match /{table}/{doc} {
+      allow read, write: if request.auth != null
+        && table in ['customers', 'vehicles', 'bookings', 'invoices', 'reminders'];
+    }
+    // Profiles: a user can read/write only their own.
+    match /users/{uid} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+  }
+}

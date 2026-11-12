@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'firebase_backend.dart';
 
 /// Raised when the server answered with an error (as opposed to being unreachable).
 class ApiException implements Exception {
@@ -39,7 +41,22 @@ class ApiService {
 
   static bool _syncing = false;
 
+  /// --dart-define=BACKEND=rest forces the PostgreSQL server; the default tries Firebase first.
+  static const String _backend = String.fromEnvironment('BACKEND', defaultValue: 'firebase');
+
+  /// true when Firebase (Firestore + Auth) is configured and active; otherwise the REST server is used.
+  static bool useFirebase = false;
+
   static Future<void> init() async {
+    if (_backend == 'firebase') {
+      try {
+        await Firebase.initializeApp();
+        useFirebase = true;
+        return;
+      } catch (_) {
+        useFirebase = false; // no google-services.json: fall back to the PostgreSQL server
+      }
+    }
     final p = await SharedPreferences.getInstance();
     final saved = p.getString('server_url');
     if (saved != null && saved.isNotEmpty) _host = saved;
@@ -137,6 +154,7 @@ class ApiService {
 
   /// Removes the on-device copy of server data (used when logging out).
   static Future<void> clearLocalData() async {
+    if (useFirebase) return;
     final p = await SharedPreferences.getInstance();
     for (final k in p.getKeys().where((k) => k.startsWith('cache:') || k == 'pending_queue').toList()) {
       await p.remove(k);
@@ -267,6 +285,7 @@ class ApiService {
   // ---------- public API (same signatures the screens already use) ----------
 
   static Future<dynamic> get(String path) async {
+    if (useFirebase) return FirebaseBackend.get(path);
     await syncPending();
     try {
       final data = _handle(await _send('GET', path));
@@ -283,7 +302,10 @@ class ApiService {
     }
   }
 
-  static Future<dynamic> post(String path, Map body) => _write('POST', path, body);
-  static Future<dynamic> put(String path, Map body) => _write('PUT', path, body);
-  static Future<dynamic> delete(String path) => _write('DELETE', path, null);
+  static Future<dynamic> post(String path, Map body) =>
+      useFirebase ? FirebaseBackend.post(path, body) : _write('POST', path, body);
+  static Future<dynamic> put(String path, Map body) =>
+      useFirebase ? FirebaseBackend.put(path, body) : _write('PUT', path, body);
+  static Future<dynamic> delete(String path) =>
+      useFirebase ? FirebaseBackend.delete(path) : _write('DELETE', path, null);
 }

@@ -7,6 +7,11 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+// Firebase: applied only when android/app/google-services.json exists (see README).
+if (file("google-services.json").exists()) {
+    apply(plugin = "com.google.gms.google-services")
+}
+
 // Release signing: create android/key.properties (see README) to sign with your own key.
 // Without it the release APK is signed with the debug key, which is fine for installing on a phone.
 val keyProps = Properties()

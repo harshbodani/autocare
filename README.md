@@ -1,6 +1,24 @@
 # AutoCare — Vehicle Service Management
 
-Flutter app (Android + web) with a Node.js / Express API on **PostgreSQL**, hosted on **Render**.
+Flutter app (Android + web). Two interchangeable backends:
+
+* **Firebase (default, no server):** Cloud Firestore + Firebase Authentication. Free Spark plan, no card, nothing sleeps, offline sync is built in.
+* **PostgreSQL:** Node.js / Express API (`backend/`) on Neon or Render. Used automatically when the app has no Firebase config, or force it with `--dart-define=BACKEND=rest`.
+
+## Firebase setup (about 10 minutes)
+1. https://console.firebase.google.com → **Add project** (Google Analytics can be off).
+2. Project overview → **Android** icon → package name `com.autocare.app` → Register → download **`google-services.json`** → put it in `android/app/` → commit and push it.
+3. **Build → Authentication → Get started → Email/Password → Enable → Save.**
+4. **Build → Firestore Database → Create database** (production mode, location e.g. `asia-south1`) → **Rules** tab → paste the contents of `firestore.rules` → **Publish**.
+5. GitHub → Actions → **Build Android APK** → Run workflow → install `app-release.apk` on the phone.
+
+The first login with `admin@autocare.com` / `password` creates the demo account automatically. Other people use **Create account** (password at least 6 characters). The app starts with no records; add customers, vehicles and so on from the app. Firebase mode is Android-only (no web config).
+
+---
+
+# PostgreSQL option
+
+Node.js / Express API on **PostgreSQL**, hosted on Neon + Render.
 
 ## How data is stored ("both")
 | Where | What |
