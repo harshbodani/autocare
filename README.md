@@ -12,10 +12,11 @@ Passwords are hashed (scrypt) and the API requires a signed token.
 
 ## 1. Deploy the backend + database on Render
 1. Push this project to a GitHub repository.
-2. Render dashboard → **New → Blueprint** → select the repo. `render.yaml` creates the web service `autocare-api` and the Postgres database `autocare-db`, and wires `DATABASE_URL` and `JWT_SECRET`.
-3. When it is live, open `https://<your-service>.onrender.com/health` — you should see `{"ok":true}`. Tables and demo data are created automatically on first start.
+2. Create a free Postgres database at [neon.tech](https://neon.tech) and copy its connection string (starts with `postgresql://`).
+3. Render dashboard → **New → Blueprint** → select the repo. `render.yaml` creates the web service `autocare-api` and generates `JWT_SECRET`. When asked for `DATABASE_URL`, paste the Neon connection string.
+4. When it is live, open `https://<your-service>.onrender.com/health` — you should see `{"ok":true}`. Tables and demo data are created automatically on first start.
 
-Notes: on Render's free plan the API sleeps when idle (first request takes ~1 minute) and the free Postgres database expires after 30 days — choose a paid database plan for permanent data.
+Notes: on Render's free plan the API sleeps when idle (first request takes ~1 minute) and Neon's free database pauses when idle and wakes on the next request.
 
 ## 2. Get the Android app onto a phone
 **Option A — build in the cloud (no Flutter install needed):**

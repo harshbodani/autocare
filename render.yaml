@@ -1,5 +1,5 @@
-# Render Blueprint: creates the API (Node) and its PostgreSQL database together.
-# Dashboard -> New -> Blueprint -> pick this repo.
+# Render Blueprint: creates the API (Node). The PostgreSQL database is hosted on Neon (free);
+# paste its connection string as DATABASE_URL when Render asks for it.
 services:
   - type: web
     name: autocare-api
@@ -13,14 +13,6 @@ services:
       - key: NODE_VERSION
         value: 20
       - key: DATABASE_URL
-        fromDatabase:
-          name: autocare-db
-          property: connectionString
+        sync: false
       - key: JWT_SECRET
         generateValue: true
-
-databases:
-  - name: autocare-db
-    databaseName: autocare_db
-    user: autocare
-    plan: free
