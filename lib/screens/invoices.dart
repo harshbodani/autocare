@@ -3,6 +3,7 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import '../services/api.dart';
+import '../services/session.dart';
 import '../widgets/common.dart';
 
 class InvoicesScreen extends StatefulWidget {
@@ -32,9 +33,15 @@ class _IState extends State<InvoicesScreen> {
     if (mounted) setState(() => l = false);
   }
 
-  void msg(Object e) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
+  void msg(Object e) {
+    if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
+  }
 
   Future add() async {
+    if (c.isEmpty || v.isEmpty) {
+      msg('Add a customer and a vehicle first.');
+      return;
+    }
     final sub = TextEditingController(text: '0'),
         disc = TextEditingController(text: '0'),
         tax = TextEditingController(text: '0'),
@@ -82,15 +89,20 @@ class _IState extends State<InvoicesScreen> {
                       TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
                       FilledButton(
                           onPressed: () async {
+                            final subV = double.tryParse(sub.text.trim()), discV = double.tryParse(disc.text.trim()) ?? 0, taxV = double.tryParse(tax.text.trim()) ?? 0;
+                            if (veh == null || subV == null || subV <= 0) {
+                              msg('Choose a vehicle and enter the subtotal amount.');
+                              return;
+                            }
                             try {
                               await ApiService.post('/invoices', {
                                 'customer_id': cust?['id'],
                                 'vehicle_id': veh?['id'],
-                                'service_date': DateTime.now().toString().split(' ').first,
-                                'subtotal': double.parse(sub.text),
-                                'discount': double.parse(disc.text),
-                                'tax': double.parse(tax.text),
-                                'items': [{'name': item.text, 'price': double.parse(sub.text)}]
+                                'service_date': ymd(DateTime.now()),
+                                'subtotal': subV,
+                                'discount': discV,
+                                'tax': taxV,
+                                'items': [{'name': item.text.trim().isEmpty ? 'Service' : item.text.trim(), 'price': subV}]
                               });
                               if (mounted) Navigator.pop(ctx);
                               load();
@@ -172,18 +184,22 @@ class _IState extends State<InvoicesScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Invoices')),
+      appBar: AppBar(title: Text(Session.isStaff ? 'Invoices' : 'My Invoices')),
       body: l
           ? const Loading()
-          : ListView.builder(
-              padding: const EdgeInsets.all(16),
+          : RefreshIndicator(
+              onRefresh: load,
+              child: inv.isEmpty
+                  ? EmptyState(icon: Icons.receipt_long_outlined, title: 'No invoices yet', hint: Session.isStaff ? 'Tap + to create one.' : 'Your bills will appear here after a service.')
+                  : ListView.builder(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 90),
               itemCount: inv.length,
               itemBuilder: (context, i) {
                 final x = inv[i];
                 return Padding(
                   padding: const EdgeInsets.only(bottom: 12),
                   child: AppCard(
-                    onTap: () => updateStatus(x),
+                    onTap: Session.isStaff ? () => updateStatus(x) : null,
                     child: Row(
                       children: [
                         Container(
@@ -196,9 +212,9 @@ class _IState extends State<InvoicesScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(x['invoice_no'], style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                              Text('${x['invoice_no']}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                               Text(x['customer_name'] ?? 'N/A', style: TextStyle(color: Colors.grey[600])),
-                              Text('₹${x['total']}', style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
+                              Text(money(x['total']), style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
                             ],
                           ),
                         ),
@@ -213,8 +229,8 @@ class _IState extends State<InvoicesScreen> {
                     ),
                   ),
                 );
-              }),
-      floatingActionButton: FloatingActionButton(onPressed: add, child: const Icon(Icons.post_add)),
+              })),
+      floatingActionButton: Session.isStaff ? FloatingActionButton(onPressed: add, child: const Icon(Icons.post_add)) : null,
     );
   }
 }

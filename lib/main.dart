@@ -38,6 +38,10 @@ class AutoCareApp extends StatelessWidget {
         elevation: 0,
       ),
       scaffoldBackgroundColor: const Color(0xFFF8FAFC),
+      navigationBarTheme: NavigationBarThemeData(
+        height: 68,
+        labelTextStyle: WidgetStateProperty.all(const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+      ),
     ),
     home: const AuthGate(),
   );

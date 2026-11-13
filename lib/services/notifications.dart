@@ -30,7 +30,7 @@ class NotificationService {
             android: AndroidNotificationDetails(
                 'autocare', 'AutoCare Reminders',
                 importance: Importance.high, priority: Priority.high)),
-        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+        androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
         uiLocalNotificationDateInterpretation:
             UILocalNotificationDateInterpretation.absoluteTime,
         payload: 'autocare');

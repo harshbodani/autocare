@@ -12,7 +12,14 @@ Flutter app (Android + web). Two interchangeable backends:
 4. **Build → Firestore Database → Create database** (production mode, location e.g. `asia-south1`) → **Rules** tab → paste the contents of `firestore.rules` → **Publish**.
 5. GitHub → Actions → **Build Android APK** → Run workflow → install `app-release.apk` on the phone.
 
-The first login with `admin@autocare.com` / `password` creates the demo account automatically. Other people use **Create account** (password at least 6 characters). The app starts with no records; add customers, vehicles and so on from the app. Firebase mode is Android-only (no web config).
+## Accounts and roles (Firebase mode)
+* **The first account created becomes the workshop ADMIN.** Create it yourself right after publishing the rules (Create account in the app). If you already logged in with the old demo account `admin@autocare.com`, that account is the admin: log in once, then change its password under **More -> My profile -> Change password** (the default demo password is public).
+* **Customers** tap *Create account* in the app. If staff already added them with the same email, they see their existing cars, bookings and invoices; otherwise a new customer record is created. Customers only ever see their own data and can add cars, book/cancel services, and view/download invoices and reminders. The Firestore rules enforce this, not just the app.
+* **Staff** (employees): they create a normal account, then the admin opens **More -> Staff & accounts** and taps *Make staff*. Staff see and manage everything except roles.
+* Email is not verified at sign-up. Staff-created customer records are linked by email, so enter customers' emails correctly.
+* Whenever `firestore.rules` changes, paste the new version into Firestore -> Rules and Publish.
+
+Firebase mode is Android-only (no web config). The app starts with no records.
 
 ---
 

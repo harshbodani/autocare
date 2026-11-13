@@ -12,6 +12,7 @@ class CustomersScreen extends StatefulWidget {
 class _CustomersState extends State<CustomersScreen> {
   List data = [];
   bool l = true;
+  String q = '';
 
   @override
   void initState() {
@@ -28,7 +29,9 @@ class _CustomersState extends State<CustomersScreen> {
     if (mounted) setState(() => l = false);
   }
 
-  void msg(Object e) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
+  void msg(Object e) {
+    if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
+  }
 
   Future edit([Map? x]) async {
     final n = TextEditingController(text: x?['name'] ?? ''),
@@ -38,25 +41,37 @@ class _CustomersState extends State<CustomersScreen> {
 
     await showDialog(
         context: context,
-        builder: (_) => AlertDialog(
+        builder: (dc) => AlertDialog(
             title: Text(x == null ? 'Add New Customer' : 'Edit Customer Info'),
             content: SingleChildScrollView(
                 child: Column(mainAxisSize: MainAxisSize.min, children: [
               Field(controller: n, label: 'Full Name', icon: Icons.person_outline),
               Field(controller: p, label: 'Phone Number', icon: Icons.phone_android_outlined, type: TextInputType.phone),
               Field(controller: e, label: 'Email Address', icon: Icons.email_outlined, type: TextInputType.emailAddress),
+              const Padding(
+                padding: EdgeInsets.only(bottom: 4),
+                child: Text('When the customer signs up in the app with this email, they get their own login and see their own cars, bookings and invoices.',
+                    style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+              ),
+              const SizedBox(height: 12),
               Field(controller: a, label: 'Home Address', icon: Icons.location_on_outlined),
             ])),
             actions: [
-              TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+              TextButton(onPressed: () => Navigator.pop(dc), child: const Text('Cancel')),
               FilledButton(
                   onPressed: () async {
+                    if (n.text.trim().isEmpty || p.text.trim().isEmpty) {
+                      msg('Name and phone are required.');
+                      return;
+                    }
+                    final body = {'name': n.text.trim(), 'phone': p.text.trim(), 'email': e.text.trim(), 'address': a.text.trim()};
                     try {
-                      if (x == null)
-                        await ApiService.post('/customers', {'name': n.text, 'phone': p.text, 'email': e.text, 'address': a.text});
-                      else
-                        await ApiService.put('/customers/${x['id']}', {'name': n.text, 'phone': p.text, 'email': e.text, 'address': a.text});
-                      if (mounted) Navigator.pop(context);
+                      if (x == null) {
+                        await ApiService.post('/customers', body);
+                      } else {
+                        await ApiService.put('/customers/${x['id']}', body);
+                      }
+                      if (dc.mounted) Navigator.pop(dc);
                       load();
                     } catch (err) {
                       msg(err);
@@ -68,87 +83,80 @@ class _CustomersState extends State<CustomersScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final shown = data.where((x) {
+      final s = q.toLowerCase();
+      return s.isEmpty || '${x['name']} ${x['phone']} ${x['email']}'.toLowerCase().contains(s);
+    }).toList();
     return Scaffold(
       appBar: AppBar(title: const Text('Customers')),
       body: l
           ? const Loading()
-          : RefreshIndicator(
-              onRefresh: load,
-              child: data.isEmpty
-                  ? Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.people_outline, size: 64, color: Colors.grey[400]),
-                          const SizedBox(height: 16),
-                          Text('No customers found', style: TextStyle(color: Colors.grey[600], fontSize: 18)),
-                        ],
-                      ),
-                    )
-                  : ListView.builder(
-                      padding: const EdgeInsets.all(16),
-                      itemCount: data.length,
-                      itemBuilder: (context, i) {
-                        final x = data[i];
-                        return Padding(
-                          padding: const EdgeInsets.only(bottom: 12),
-                          child: AppCard(
-                            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => CustomerVehicles(customer: x))),
-                            child: Row(
-                              children: [
-                                CircleAvatar(
-                                  radius: 28,
-                                  backgroundColor: Colors.indigo.withOpacity(0.1),
-                                  child: Text(x['name'][0].toUpperCase(), style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.indigo)),
-                                ),
-                                const SizedBox(width: 16),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(x['name'], style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                                      const SizedBox(height: 4),
-                                      Row(
-                                        children: [
-                                          Icon(Icons.phone, size: 14, color: Colors.grey[600]),
-                                          const SizedBox(width: 4),
-                                          Text(x['phone'], style: TextStyle(color: Colors.grey[600])),
-                                        ],
-                                      ),
-                                    ],
+          : Column(children: [
+              SearchBox(hint: 'Search name, phone or email', onChanged: (v) => setState(() => q = v)),
+              Expanded(
+                child: RefreshIndicator(
+                  onRefresh: load,
+                  child: shown.isEmpty
+                      ? const EmptyState(icon: Icons.people_outline, title: 'No customers found', hint: 'Tap + to add one.')
+                      : ListView.builder(
+                          padding: const EdgeInsets.fromLTRB(16, 12, 16, 90),
+                          itemCount: shown.length,
+                          itemBuilder: (context, i) {
+                            final x = shown[i];
+                            final name = '${x['name'] ?? '?'}';
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 12),
+                              child: AppCard(
+                                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => VehiclesScreen(customerFilter: x))),
+                                child: Row(children: [
+                                  CircleAvatar(
+                                    radius: 26,
+                                    backgroundColor: Colors.indigo.withOpacity(0.1),
+                                    child: Text(name.isEmpty ? '?' : name[0].toUpperCase(), style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.indigo)),
                                   ),
-                                ),
-                                PopupMenuButton(
-                                  icon: const Icon(Icons.more_vert),
-                                  itemBuilder: (_) => [
-                                    const PopupMenuItem(value: 1, child: ListTile(leading: Icon(Icons.edit_outlined), title: Text('Edit'))),
-                                    const PopupMenuItem(value: 2, child: ListTile(leading: Icon(Icons.delete_outline, color: Colors.red), title: Text('Delete', style: TextStyle(color: Colors.red)))),
-                                  ],
-                                  onSelected: (v) async {
-                                    if (v == 1)
-                                      edit(x);
-                                    else {
-                                      await ApiService.delete('/customers/${x['id']}');
-                                      load();
-                                    }
-                                  },
-                                ),
-                              ],
-                            ),
-                          ),
-                        );
-                      })),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => edit(),
-        child: const Icon(Icons.add),
-      ),
+                                  const SizedBox(width: 14),
+                                  Expanded(
+                                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                                      Text(name, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
+                                      const SizedBox(height: 4),
+                                      Row(children: [
+                                        Icon(Icons.phone, size: 14, color: Colors.grey[600]),
+                                        const SizedBox(width: 4),
+                                        Text('${x['phone'] ?? ''}', style: TextStyle(color: Colors.grey[600])),
+                                      ]),
+                                      if (x['owner_uid'] != null) ...[
+                                        const SizedBox(height: 6),
+                                        const StatusBadge(text: 'Has app account', color: Colors.green),
+                                      ],
+                                    ]),
+                                  ),
+                                  PopupMenuButton<int>(
+                                    icon: const Icon(Icons.more_vert),
+                                    itemBuilder: (_) => const [
+                                      PopupMenuItem(value: 1, child: ListTile(leading: Icon(Icons.edit_outlined), title: Text('Edit'))),
+                                      PopupMenuItem(value: 2, child: ListTile(leading: Icon(Icons.delete_outline, color: Colors.red), title: Text('Delete', style: TextStyle(color: Colors.red)))),
+                                    ],
+                                    onSelected: (v) async {
+                                      if (v == 1) {
+                                        edit(x);
+                                      } else if (await confirmDialog(context, 'Delete customer?', 'This also deletes ${x['name']}\'s vehicles, bookings, invoices and reminders.')) {
+                                        try {
+                                          await ApiService.delete('/customers/${x['id']}');
+                                        } catch (err) {
+                                          msg(err);
+                                        }
+                                        load();
+                                      }
+                                    },
+                                  ),
+                                ]),
+                              ),
+                            );
+                          }),
+                ),
+              ),
+            ]),
+      floatingActionButton: FloatingActionButton(onPressed: () => edit(), child: const Icon(Icons.person_add_alt_1)),
     );
   }
-}
-
-class CustomerVehicles extends StatelessWidget {
-  final Map customer;
-  const CustomerVehicles({super.key, required this.customer});
-  @override
-  Widget build(BuildContext context) => VehiclesScreen(customerFilter: customer);
 }

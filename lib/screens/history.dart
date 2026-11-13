@@ -10,6 +10,7 @@ class HistoryScreen extends StatefulWidget {
 
 class _HistoryState extends State<HistoryScreen> {
   List d = [];
+  bool loaded = false;
   @override
   void initState() {
     super.initState();
@@ -19,11 +20,12 @@ class _HistoryState extends State<HistoryScreen> {
   Future load() async {
     try {
       d = await ApiService.get('/vehicles/${widget.vehicle['id']}/history');
-      setState(() {});
     } catch (e) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(e.toString())));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
+      }
     }
+    if (mounted) setState(() => loaded = true);
   }
 
   Widget build(BuildContext c) => Scaffold(
@@ -34,6 +36,8 @@ class _HistoryState extends State<HistoryScreen> {
                 title: Text(
                     '${widget.vehicle['make']} ${widget.vehicle['model']}'),
                 subtitle: Text(widget.vehicle['registration_no']))),
+        if (loaded && d.isEmpty)
+          const Padding(padding: EdgeInsets.all(32), child: Center(child: Text('No service history yet.'))),
         ...d.map((x) => AppCard(
             child: ListTile(
                 title: Text('${x['service_type']}'),

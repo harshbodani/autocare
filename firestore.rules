@@ -1,14 +1,84 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Workshop data: any signed-in user of the app.
-    match /{table}/{doc} {
-      allow read, write: if request.auth != null
-        && table in ['customers', 'vehicles', 'bookings', 'invoices', 'reminders'];
+
+    function signedIn() { return request.auth != null; }
+    function me() { return get(/databases/$(database)/documents/users/$(request.auth.uid)).data; }
+    function isAdmin() { return signedIn() && me().role == 'ADMIN'; }
+    function isStaff() { return signedIn() && me().role in ['ADMIN', 'STAFF']; }
+    // a record that belongs to the signed-in customer
+    function mine() { return signedIn() && resource.data.customer_id == me().customer_id; }
+    function willBeMine() { return signedIn() && request.resource.data.customer_id == me().customer_id; }
+    function changed() { return request.resource.data.diff(resource.data).affectedKeys(); }
+    // the customer record `doc` (id `cid`) is owned by the signed-in user
+    function owns(doc, cid) {
+      return get(/databases/$(database)/documents/customers/$(doc)).data.owner_uid == request.auth.uid
+          && get(/databases/$(database)/documents/customers/$(doc)).data.id == cid;
     }
-    // Profiles: a user can read/write only their own.
+
+    // The first account created becomes the workshop admin (it claims this marker).
+    match /meta/{doc} {
+      allow read: if signedIn();
+      allow create: if signedIn() && doc == 'admin'
+        && !exists(/databases/$(database)/documents/meta/admin)
+        && request.resource.data.uid == request.auth.uid;
+    }
+
     match /users/{uid} {
-      allow read, write: if request.auth != null && request.auth.uid == uid;
+      allow read: if signedIn() && (request.auth.uid == uid || isStaff());
+      allow create: if signedIn() && request.auth.uid == uid && (
+        (request.resource.data.role == 'CUSTOMER'
+          && owns(request.resource.data.customer_doc, request.resource.data.customer_id))
+        || (request.resource.data.role == 'ADMIN'
+          && get(/databases/$(database)/documents/meta/admin).data.uid == request.auth.uid));
+      // Only an admin can change roles. Users may rename themselves or link their own customer record once.
+      allow update: if signedIn() && (isAdmin() || (request.auth.uid == uid
+        && request.resource.data.role == resource.data.role
+        && (changed().hasOnly(['name'])
+            || (!('customer_id' in resource.data)
+                && changed().hasOnly(['customer_id', 'customer_doc', 'name'])
+                && owns(request.resource.data.customer_doc, request.resource.data.customer_id)))));
+    }
+
+    match /customers/{id} {
+      allow read: if signedIn() && (isStaff()
+        || resource.data.owner_uid == request.auth.uid
+        || resource.data.email == request.auth.token.email);
+      allow create: if signedIn() && (isStaff()
+        || (request.resource.data.owner_uid == request.auth.uid
+            && request.resource.data.email == request.auth.token.email));
+      allow update: if signedIn() && (isStaff()
+        || (resource.data.owner_uid == request.auth.uid && !changed().hasAny(['owner_uid', 'email', 'id']))
+        // a customer claims the record staff created for their email address
+        || (!('owner_uid' in resource.data) && resource.data.email == request.auth.token.email
+            && changed().hasOnly(['owner_uid']) && request.resource.data.owner_uid == request.auth.uid));
+      allow delete: if isStaff();
+    }
+
+    match /vehicles/{id} {
+      allow read: if signedIn() && (isStaff() || mine());
+      allow create: if signedIn() && (isStaff() || willBeMine());
+      allow update: if signedIn() && (isStaff() || (mine() && willBeMine()));
+      allow delete: if isStaff();
+    }
+
+    match /bookings/{id} {
+      allow read: if signedIn() && (isStaff() || mine());
+      allow create: if signedIn() && (isStaff() || (willBeMine() && request.resource.data.status == 'PENDING'));
+      allow update: if signedIn() && (isStaff() || (mine() && resource.data.status == 'PENDING'
+        && request.resource.data.status == 'CANCELLED' && changed().hasOnly(['status'])));
+      allow delete: if isStaff();
+    }
+
+    match /invoices/{id} {
+      allow read: if signedIn() && (isStaff() || mine());
+      allow write: if isStaff();
+    }
+
+    match /reminders/{id} {
+      allow read: if signedIn() && (isStaff() || mine());
+      allow create, delete: if isStaff();
+      allow update: if signedIn() && (isStaff() || (mine() && changed().hasOnly(['is_done'])));
     }
   }
 }

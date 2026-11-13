@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'api.dart';
+import 'session.dart';
 
 /// Firestore implementation of the same "paths" the screens already use with the REST API.
 /// Firestore keeps its own on-device copy, so reads work offline and writes made offline
@@ -19,7 +20,7 @@ class FirebaseBackend {
   };
 
   /// Numeric ids (the screens expect ints). Created on the device so it also works offline.
-  static int _newId() => DateTime.now().millisecondsSinceEpoch * 1000 + _rand.nextInt(1000);
+  static int newId() => DateTime.now().millisecondsSinceEpoch * 1000 + _rand.nextInt(1000);
 
   static List<String> _seg(String path) => path.split('/').where((s) => s.isNotEmpty).toList();
 
@@ -31,7 +32,22 @@ class FirebaseBackend {
     return e.message ?? 'Database error (${e.code}).';
   }
 
+  /// Customers only ever query their own records (the security rules enforce it too).
+  static bool get _scoped => !Session.isStaff;
+  static int get _cid => Session.customerId ?? -1;
+
   // ---------- reads (server first, then the on-device copy) ----------
+
+  static Future<DocumentSnapshot<Map<String, dynamic>>> _getDoc(DocumentReference<Map<String, dynamic>> ref) async {
+    try {
+      return await ref.get().timeout(const Duration(seconds: 10));
+    } on TimeoutException {
+      return ref.get(const GetOptions(source: Source.cache));
+    } on FirebaseException catch (e) {
+      if (e.code == 'unavailable') return ref.get(const GetOptions(source: Source.cache));
+      throw ApiException(_msg(e));
+    }
+  }
 
   static Future<QuerySnapshot<Map<String, dynamic>>> _run(Query<Map<String, dynamic>> q) async {
     try {
@@ -45,6 +61,17 @@ class FirebaseBackend {
   }
 
   static Future<List<Map<String, dynamic>>> _all(String table) async {
+    if (_scoped) {
+      if (Session.customerId == null) return [];
+      if (table == 'customers') {
+        final d = await _getDoc(_db.collection('customers').doc('$_cid'));
+        return d.exists ? [Map<String, dynamic>.from(d.data()!)] : [];
+      }
+      final mine = await _run(_db.collection(table).where('customer_id', isEqualTo: _cid));
+      final r = mine.docs.map((d) => Map<String, dynamic>.from(d.data())).toList();
+      r.sort((a, b) => _n(a['id']).compareTo(_n(b['id'])));
+      return r;
+    }
     final snap = await _run(_db.collection(table));
     final rows = snap.docs.map((d) => Map<String, dynamic>.from(d.data())).toList();
     rows.sort((a, b) => _n(a['id']).compareTo(_n(b['id'])));
@@ -64,7 +91,18 @@ class FirebaseBackend {
     final seg = _seg(path);
     if (seg.isEmpty) throw ApiException('Unknown request.');
     if (seg[0] == 'dashboard') return _dashboard();
+    if (seg[0] == 'users') {
+      if (!Session.isStaff) throw ApiException('Not allowed.');
+      final snap = await _run(_db.collection('users'));
+      return snap.docs.map((d) => {...d.data(), 'uid': d.id}).toList();
+    }
     if (seg[0] == 'vehicles' && seg.length == 3 && seg[2] == 'history') {
+      if (_scoped) {
+        final vid = int.parse(seg[1]);
+        final rows = (await _all('bookings')).where((b) => _n(b['vehicle_id']) == vid).toList();
+        rows.sort((a, b) => _n(b['id']).compareTo(_n(a['id'])));
+        return rows;
+      }
       final snap = await _run(_db.collection('bookings').where('vehicle_id', isEqualTo: int.parse(seg[1])));
       final rows = snap.docs.map((d) => Map<String, dynamic>.from(d.data())).toList();
       rows.sort((a, b) => _n(b['id']).compareTo(_n(a['id'])));
@@ -81,9 +119,13 @@ class FirebaseBackend {
     final vehicles = await _all('vehicles');
     final bookings = await _all('bookings');
     final invoices = await _all('invoices');
-    double revenue = 0;
+    double revenue = 0, due = 0;
     for (final i in invoices) {
-      if (i['status'] == 'PAID') revenue += _n(i['total']).toDouble();
+      if (i['status'] == 'PAID') {
+        revenue += _n(i['total']).toDouble();
+      } else {
+        due += _n(i['total']).toDouble();
+      }
     }
     return {
       'customers': customers.length,
@@ -92,6 +134,7 @@ class FirebaseBackend {
       'pending_bookings': bookings.where((b) => b['status'] == 'PENDING').length,
       'unpaid_invoices': invoices.where((i) => i['status'] != 'PAID').length,
       'revenue': revenue,
+      'amount_due': due,
     };
   }
 
@@ -121,14 +164,22 @@ class FirebaseBackend {
     final table = _seg(path).first;
     if (!_cols.containsKey(table)) throw ApiException('Unknown request.');
     final data = _pick(table, body);
-    final id = _newId();
+    if (_scoped) {
+      if (table != 'vehicles' && table != 'bookings') throw ApiException('Not allowed.');
+      data['customer_id'] = _cid;
+      if (table == 'bookings') data['status'] = 'PENDING';
+    }
+    if (table == 'customers' && data['email'] != null) data['email'] = data['email'].toString().trim().toLowerCase();
+    final id = newId();
     data['id'] = id;
     data['created_at'] = DateTime.now().toIso8601String();
 
     if (table == 'vehicles') {
       data['vin'] ??= '';
-      final dup = await _run(_db.collection('vehicles').where('registration_no', isEqualTo: data['registration_no']));
-      if (dup.docs.isNotEmpty) throw ApiException('That record already exists (duplicate value).');
+      if (!_scoped) {
+        final dup = await _run(_db.collection('vehicles').where('registration_no', isEqualTo: data['registration_no']));
+        if (dup.docs.isNotEmpty) throw ApiException('That record already exists (duplicate value).');
+      }
     }
     if (table == 'bookings') {
       data['status'] ??= 'PENDING';
@@ -148,9 +199,23 @@ class FirebaseBackend {
 
   static Future<dynamic> put(String path, Map body) async {
     final seg = _seg(path);
+    if (seg.length == 2 && seg[0] == 'users') {
+      if (!Session.isAdmin) throw ApiException('Only the admin can change roles.');
+      final role = body['role'];
+      if (role != 'STAFF' && role != 'CUSTOMER') throw ApiException('Invalid role.');
+      await _commit(_db.collection('users').doc(seg[1]).update({'role': role}));
+      return {'ok': true};
+    }
     if (seg.length < 2 || !_cols.containsKey(seg[0])) throw ApiException('Unknown request.');
     final table = seg[0];
     final ref = _db.collection(table).doc(seg[1]);
+    if (_scoped) {
+      final sub = seg.length == 3 ? seg[2] : '';
+      final ok = (table == 'customers' && seg[1] == '$_cid') ||
+          (table == 'bookings' && sub == 'status' && body['status'] == 'CANCELLED') ||
+          (table == 'reminders' && sub == 'done');
+      if (!ok) throw ApiException('Not allowed.');
+    }
     Map<String, dynamic> data;
     if (seg.length == 3 && seg[2] == 'status') {
       data = {'status': body['status']};
@@ -158,6 +223,10 @@ class FirebaseBackend {
       data = {'is_done': body['done'] == true ? 1 : 0};
     } else {
       data = _pick(table, body);
+      if (table == 'customers') {
+        if (_scoped) data.remove('email');
+        if (data['email'] != null) data['email'] = data['email'].toString().trim().toLowerCase();
+      }
       if (table == 'invoices' && ['subtotal', 'discount', 'tax'].any(data.containsKey)) {
         final cur = (await _run(_db.collection('invoices').where('id', isEqualTo: int.parse(seg[1])))).docs;
         final old = cur.isEmpty ? <String, dynamic>{} : cur.first.data();
@@ -173,6 +242,7 @@ class FirebaseBackend {
   static Future<dynamic> delete(String path) async {
     final seg = _seg(path);
     if (seg.length < 2 || !_cols.containsKey(seg[0])) throw ApiException('Unknown request.');
+    if (_scoped) throw ApiException('Not allowed.');
     final table = seg[0];
     final id = int.parse(seg[1]);
     final batch = _db.batch();
